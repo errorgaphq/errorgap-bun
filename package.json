@@ -1,0 +1,36 @@
+{
+  "name": "@errorgap/bun",
+  "version": "0.1.0",
+  "description": "Bun notifier for Errorgap error tracking.",
+  "license": "MIT",
+  "author": "Errorgap",
+  "homepage": "https://gitlab.jgrubbs.net/jGRUBBS/errorgap-bun",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.jgrubbs.net/jGRUBBS/errorgap-bun.git"
+  },
+  "keywords": ["errorgap", "bun", "error-tracking", "exceptions", "monitoring"],
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.3.3"
+  }
+}
