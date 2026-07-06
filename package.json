@@ -4,10 +4,10 @@
   "description": "Bun notifier for Errorgap error tracking.",
   "license": "MIT",
   "author": "Errorgap",
-  "homepage": "https://gitlab.jgrubbs.net/jGRUBBS/errorgap-bun",
+  "homepage": "https://github.com/errorgaphq/errorgap-bun",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.jgrubbs.net/jGRUBBS/errorgap-bun.git"
+    "url": "https://github.com/errorgaphq/errorgap-bun.git"
   },
   "keywords": ["errorgap", "bun", "error-tracking", "exceptions", "monitoring"],
   "type": "module",
