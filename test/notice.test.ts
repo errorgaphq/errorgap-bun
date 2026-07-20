@@ -40,3 +40,42 @@ describe("buildNotice", () => {
     expect(notice.project_id).toBe("p_1");
   });
 });
+
+describe("buildNotice cause chains", () => {
+  const cfg = new Configuration({ endpoint: "https://e.example.com", projectSlug: "demo" });
+
+  it("records nested causes in context and merges their frames", () => {
+    const root = new Error("db connection refused");
+    root.name = "ConnectionError";
+    const mid = new Error("failed to load order", { cause: root });
+    mid.name = "RepositoryError";
+    const top = new Error("checkout failed", { cause: mid });
+    top.name = "CheckoutError";
+
+    const notice = buildNotice(top, cfg);
+    expect(notice.errors[0]?.type).toBe("CheckoutError");
+    const causes = notice.context.causes as Array<{ type: string; message: string }>;
+    expect(causes).toEqual([
+      { type: "RepositoryError", message: "failed to load order" },
+      { type: "ConnectionError", message: "db connection refused" },
+    ]);
+    notice.errors[0]!.backtrace.forEach((frame, i) => expect(frame.index).toBe(i));
+  });
+
+  it("omits causes when there is no cause chain", () => {
+    const notice = buildNotice(new Error("solo"), cfg);
+    expect(notice.context.causes).toBeUndefined();
+  });
+});
+
+describe("buildNotice breadcrumbs", () => {
+  const cfg = new Configuration({ endpoint: "https://e.example.com", projectSlug: "demo" });
+
+  it("attaches provided breadcrumbs to context", () => {
+    const notice = buildNotice(new Error("x"), cfg, {
+      breadcrumbs: [{ message: "handled GET /orders", timestamp: "2026-01-01T00:00:00.000Z" }],
+    });
+    const crumbs = notice.context.breadcrumbs as Array<{ message: string }>;
+    expect(crumbs[0]?.message).toBe("handled GET /orders");
+  });
+});

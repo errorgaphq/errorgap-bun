@@ -77,3 +77,73 @@ describe("Client", () => {
     expect(result.error).toBeDefined();
   });
 });
+
+describe("Client logs and transactions", () => {
+  function cfg(ing: { endpoint: string }, overrides: Record<string, unknown> = {}) {
+    return new Configuration({
+      endpoint: ing.endpoint,
+      projectSlug: "demo",
+      apiKey: "flk_test",
+      async: false,
+      ...overrides,
+    });
+  }
+
+  it("POSTs a structured log to /logs", async () => {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(cfg(ing));
+      const result = await client.notifyLog("gateway timeout", "error", {
+        source: "payments",
+        sync: true,
+      });
+      expect(result.status).toBe(201);
+      const req = ing.requests[0]!;
+      expect(new URL(req.url).pathname).toBe("/api/projects/demo/logs");
+      expect(req.body).toMatchObject({ message: "gateway timeout", level: "error", source: "payments" });
+    } finally {
+      ing.close();
+    }
+  });
+
+  it("drops logs below the minimum level", async () => {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(cfg(ing, { minimumLogLevel: "warn" }));
+      const result = await client.notifyLog("chatty", "info", { sync: true });
+      expect(result.status).toBe(204);
+      expect(ing.requests.length).toBe(0);
+    } finally {
+      ing.close();
+    }
+  });
+
+  it("POSTs an APM transaction to /transactions", async () => {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(cfg(ing));
+      const result = await client.notifyTransaction(
+        { kind: "web", method: "GET", path: "/orders/{id}", pathRaw: "/orders/1", durationMs: 10 },
+        { sync: true },
+      );
+      expect(result.status).toBe(201);
+      const req = ing.requests[0]!;
+      expect(new URL(req.url).pathname).toBe("/api/projects/demo/transactions");
+      expect(req.body).toMatchObject({ kind: "web", path: "/orders/{id}", path_raw: "/orders/1" });
+    } finally {
+      ing.close();
+    }
+  });
+
+  it("skips transactions when APM is disabled", async () => {
+    const ing = await startIngestor();
+    try {
+      const client = new Client(cfg(ing, { apmEnabled: false }));
+      const result = await client.notifyTransaction({ durationMs: 5 }, { sync: true });
+      expect(result.status).toBe(204);
+      expect(ing.requests.length).toBe(0);
+    } finally {
+      ing.close();
+    }
+  });
+});

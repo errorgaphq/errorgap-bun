@@ -1,6 +1,6 @@
 {
   "name": "@errorgap/bun",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bun notifier for Errorgap error tracking.",
   "license": "MIT",
   "author": "Errorgap",
@@ -9,7 +9,13 @@
     "type": "git",
     "url": "https://github.com/errorgaphq/errorgap-bun.git"
   },
-  "keywords": ["errorgap", "bun", "error-tracking", "exceptions", "monitoring"],
+  "keywords": [
+    "errorgap",
+    "bun",
+    "error-tracking",
+    "exceptions",
+    "monitoring"
+  ],
   "type": "module",
   "main": "./src/index.ts",
   "module": "./src/index.ts",
@@ -21,7 +27,11 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["src", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "bun": ">=1.0.0"
   },
