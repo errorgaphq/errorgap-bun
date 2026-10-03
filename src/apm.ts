@@ -45,6 +45,8 @@ export class SpanCollector {
 }
 
 export interface Transaction {
+  /** Links the errors raised during this transaction to it. */
+  id?: string;
   /** "web" for HTTP interactions, "job" for background work. */
   kind?: string;
   method?: string;
@@ -73,6 +75,7 @@ export function transactionPayload(
     occurred_at: transaction.occurredAt ?? new Date().toISOString(),
     spans: (transaction.spans ?? []).map(spanPayload),
   };
+  if (transaction.id !== undefined) payload.id = transaction.id;
   if (transaction.method !== undefined) payload.method = transaction.method;
   if (transaction.path !== undefined) payload.path = transaction.path;
   if (transaction.pathRaw !== undefined) payload.path_raw = transaction.pathRaw;
