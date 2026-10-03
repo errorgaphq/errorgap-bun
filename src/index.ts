@@ -5,6 +5,7 @@ import { BreadcrumbBuffer, type BreadcrumbInput } from "./breadcrumbs.js";
 import { SpanCollector, type Transaction } from "./apm.js";
 import type { NoticeContext } from "./notice.js";
 import { VERSION } from "./version.js";
+import { currentTransactionId, newTransactionId, runInTransaction } from "./transaction-context.js";
 
 export type { ConfigurationInput, Logger } from "./configuration.js";
 export type { BacktraceFrame, SourceExcerpt } from "./backtrace.js";
@@ -16,6 +17,7 @@ export { Client } from "./client.js";
 export { Configuration } from "./configuration.js";
 export { SpanCollector, databaseSpan, externalSpan, normalizeSql } from "./apm.js";
 export { BreadcrumbBuffer } from "./breadcrumbs.js";
+export { currentTransactionId, newTransactionId, runInTransaction } from "./transaction-context.js";
 export { VERSION };
 
 let configuration = new Configuration();
@@ -79,12 +81,15 @@ async function trackTransaction<T>(
   const spans = new SpanCollector();
   const startedAt = new Date().toISOString();
   const start = Date.now();
+  // Errors reported while the operation runs carry this transaction's id.
+  const id = meta.id ?? newTransactionId();
   try {
-    return await operation(spans);
+    return await runInTransaction(id, () => operation(spans));
   } finally {
     void notifyTransaction({
       kind: meta.kind ?? "web",
       ...meta,
+      id,
       occurredAt: meta.occurredAt ?? startedAt,
       durationMs: Date.now() - start,
       spans: spans.snapshot(),
@@ -104,10 +109,12 @@ async function trackJob<T>(
   const spans = new SpanCollector();
   const startedAt = new Date().toISOString();
   const start = Date.now();
+  const id = newTransactionId();
   try {
-    return await operation(spans);
+    return await runInTransaction(id, () => operation(spans));
   } finally {
     void notifyTransaction({
+      id,
       kind: "job",
       jobClass,
       queue: meta.queue ?? "default",
@@ -133,6 +140,8 @@ function getClient(): Client {
 
 export const Errorgap = {
   init,
+  currentTransactionId,
+  runInTransaction,
   notify,
   addBreadcrumb,
   clearBreadcrumbs,

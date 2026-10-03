@@ -1,6 +1,6 @@
 {
   "name": "@errorgap/bun",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Bun notifier for Errorgap error tracking.",
   "license": "MIT",
   "author": "Errorgap",

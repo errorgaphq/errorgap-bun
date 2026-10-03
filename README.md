@@ -93,6 +93,13 @@ await Errorgap.trackJob("ReceiptJob", async (spans) => {
 concrete URL. Both helpers time the callback and deliver on completion. Use
 `Errorgap.notifyTransaction(...)` for a pre-measured transaction.
 
+Errors reported while a `trackTransaction`/`trackJob` callback runs — from
+`Errorgap.notify` or the global handlers — carry the transaction's id as
+`context.transaction_id`, so errorgap shows the error a request actually raised
+on its trace and links each occurrence to its request. The id follows awaits
+(`AsyncLocalStorage`) and never leaks into a concurrent request. In a custom
+server, `runInTransaction(id, fn)` and `currentTransactionId()` do the same.
+
 ## Configuration reference
 
 | Option | Default | Notes |

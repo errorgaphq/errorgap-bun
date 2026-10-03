@@ -3,6 +3,7 @@ import { buildNotice, type NoticeContext, type NoticePayload } from "./notice.js
 import { transactionPayload, type Transaction } from "./apm.js";
 import { logLevelRank, normalizeLogLevel } from "./logs.js";
 import { VERSION } from "./version.js";
+import { currentTransactionId } from "./transaction-context.js";
 
 export interface DeliveryResult {
   status?: number;
@@ -34,7 +35,7 @@ export class Client {
     try {
       this.configuration.validate();
       const err = coerceError(error);
-      const notice = buildNotice(err, this.configuration, options);
+      const notice = buildNotice(err, this.configuration, withTransaction(options));
       return this.submit("notices", notice, options.sync);
     } catch (exception) {
       this.log(exception);
@@ -180,4 +181,14 @@ function coerceError(error: unknown): Error {
     return err;
   }
   return new Error(String(error));
+}
+
+/**
+ * The request or job this error was raised in, unless the caller set one,
+ * so errorgap links the two.
+ */
+function withTransaction<T extends NoticeContext>(options: T): T {
+  const id = currentTransactionId();
+  if (!id || (options.context && "transaction_id" in options.context)) return options;
+  return { ...options, context: { ...(options.context ?? {}), transaction_id: id } };
 }
