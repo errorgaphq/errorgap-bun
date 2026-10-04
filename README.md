@@ -100,6 +100,27 @@ on its trace and links each occurrence to its request. The id follows awaits
 (`AsyncLocalStorage`) and never leaks into a concurrent request. In a custom
 server, `runInTransaction(id, fn)` and `currentTransactionId()` do the same.
 
+### Tracking requests
+
+Wrap a `Bun.serve` fetch handler (or any `(request) => Response` handler, such
+as Hono's `app.fetch`) with `withErrorgap` and each request becomes a `web`
+transaction (sent with `apmEnabled`), grouped by path with id-like segments
+templated (`/orders/123` → `/orders/:id`; pass `{ route: (request) => ... }`
+for exact names). Errors reported while it runs carry its transaction id, an
+error the handler throws is reported and rethrown, and the `x-errorgap-trace`
+header sent by `@errorgap/browser` 0.3+ links the browser's view of the call
+to it.
+
+```ts
+import { withErrorgap } from "@errorgap/bun";
+
+Bun.serve({
+  fetch: withErrorgap(async (request) => {
+    return new Response("ok");
+  }),
+});
+```
+
 ## Configuration reference
 
 | Option | Default | Notes |
