@@ -2,7 +2,13 @@ import { Client, type DeliveryResult, type LogOptions } from "./client.js";
 import { Configuration, type ConfigurationInput } from "./configuration.js";
 import { installProcessHandlers, uninstallProcessHandlers } from "./handlers.js";
 import { BreadcrumbBuffer, type BreadcrumbInput } from "./breadcrumbs.js";
-import { SpanCollector, type Transaction } from "./apm.js";
+import {
+  browserTraceId,
+  routeName,
+  SpanCollector,
+  TRACE_HEADER,
+  type Transaction,
+} from "./apm.js";
 import type { NoticeContext } from "./notice.js";
 import { VERSION } from "./version.js";
 import { currentTransactionId, newTransactionId, runInTransaction } from "./transaction-context.js";
@@ -15,7 +21,15 @@ export type { Breadcrumb, BreadcrumbInput } from "./breadcrumbs.js";
 export type { Span, SpanLocation, Transaction } from "./apm.js";
 export { Client } from "./client.js";
 export { Configuration } from "./configuration.js";
-export { SpanCollector, databaseSpan, externalSpan, normalizeSql } from "./apm.js";
+export {
+  SpanCollector,
+  databaseSpan,
+  externalSpan,
+  normalizeSql,
+  browserTraceId,
+  routeName,
+  TRACE_HEADER,
+} from "./apm.js";
 export { BreadcrumbBuffer } from "./breadcrumbs.js";
 export { currentTransactionId, newTransactionId, runInTransaction } from "./transaction-context.js";
 export { VERSION };
@@ -126,6 +140,64 @@ async function trackJob<T>(
   }
 }
 
+/** Options for {@link withErrorgap}. */
+export interface ServeTrackingOptions {
+  /**
+   * The route a request is grouped by. Defaults to the path with id-like
+   * segments replaced by `:id` (see `routeName`).
+   */
+  route?: (request: Request) => string | undefined;
+  /** Report errors the handler throws. Defaults to true. */
+  reportErrors?: boolean;
+}
+
+/**
+ * Wrap a `Bun.serve` fetch handler so each request is an APM transaction
+ * (sent with `apmEnabled`). Errors reported while it runs carry the
+ * transaction id, an error it throws is reported (and rethrown), and the
+ * browser SDK's `x-errorgap-trace` header links the browser's view of the
+ * call to it. Works for any `(request) => Response` handler, e.g. Hono's
+ * `app.fetch`.
+ */
+export function withErrorgap<A extends unknown[]>(
+  handler: (request: Request, ...rest: A) => Response | Promise<Response>,
+  options: ServeTrackingOptions = {},
+): (request: Request, ...rest: A) => Promise<Response> {
+  return async (request: Request, ...rest: A): Promise<Response> => {
+    const id = newTransactionId();
+    const startedAt = new Date().toISOString();
+    const start = performance.now();
+    const pathname = new URL(request.url).pathname;
+    let status = 500;
+    try {
+      const response = await runInTransaction(id, () => handler(request, ...rest));
+      status = response.status;
+      return response;
+    } catch (error) {
+      if (options.reportErrors !== false) {
+        await notify(error, {
+          context: { transaction_id: id, url: request.url.split("?")[0], action: request.method },
+          environment: { method: request.method, path: pathname },
+          sync: true,
+        });
+      }
+      throw error;
+    } finally {
+      void notifyTransaction({
+        id,
+        traceId: browserTraceId(request.headers.get(TRACE_HEADER)),
+        kind: "web",
+        method: request.method,
+        path: options.route?.(request) ?? routeName(pathname),
+        pathRaw: pathname,
+        statusCode: status,
+        durationMs: performance.now() - start,
+        occurredAt: startedAt,
+      });
+    }
+  };
+}
+
 function flush(): Promise<void> {
   return client.flush();
 }
@@ -149,6 +221,7 @@ export const Errorgap = {
   notifyTransaction,
   trackTransaction,
   trackJob,
+  withErrorgap,
   flush,
   configuration: getConfiguration,
   client: getClient,

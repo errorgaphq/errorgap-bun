@@ -47,6 +47,12 @@ export class SpanCollector {
 export interface Transaction {
   /** Links the errors raised during this transaction to it. */
   id?: string;
+  /**
+   * The `x-errorgap-trace` header the errorgap browser SDK sent with the
+   * request (see `browserTraceId`); links the browser's view of the call to
+   * this transaction.
+   */
+  traceId?: string;
   /** "web" for HTTP interactions, "job" for background work. */
   kind?: string;
   method?: string;
@@ -76,6 +82,7 @@ export function transactionPayload(
     spans: (transaction.spans ?? []).map(spanPayload),
   };
   if (transaction.id !== undefined) payload.id = transaction.id;
+  if (transaction.traceId !== undefined) payload.trace_id = transaction.traceId;
   if (transaction.method !== undefined) payload.method = transaction.method;
   if (transaction.path !== undefined) payload.path = transaction.path;
   if (transaction.pathRaw !== undefined) payload.path_raw = transaction.pathRaw;
@@ -104,4 +111,32 @@ export function normalizeSql(sql: string): string {
     .replace(/\b\d+(?:\.\d+)?\b/g, "?")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** The header the errorgap browser SDK sends with API calls. */
+export const TRACE_HEADER = "x-errorgap-trace";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * The trace id in an `x-errorgap-trace` header value, lowercased, or
+ * `undefined` unless it is a well-formed UUID.
+ */
+export function browserTraceId(header: string | null | undefined): string | undefined {
+  if (typeof header !== "string") return undefined;
+  const value = header.trim().toLowerCase();
+  return UUID.test(value) ? value : undefined;
+}
+
+const ID_SEGMENT = /^(?:\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|[0-9A-Za-z_-]{24,})$/i;
+
+/**
+ * Group a request path by route: id-like segments (numbers, UUIDs, long
+ * hashes) become `:id`, so `/orders/123` and `/orders/456` are one route.
+ */
+export function routeName(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((segment) => (ID_SEGMENT.test(segment) ? ":id" : segment))
+    .join("/") || "/";
 }
