@@ -13,9 +13,10 @@ import type { NoticeContext } from "./notice.js";
 import { VERSION } from "./version.js";
 import { currentTransactionId, newTransactionId, runInTransaction } from "./transaction-context.js";
 
-export type { ConfigurationInput, Logger } from "./configuration.js";
+export type { BeforeNotify, ConfigurationInput, Logger } from "./configuration.js";
+export type { FilterKey } from "./filter.js";
 export type { BacktraceFrame, SourceExcerpt } from "./backtrace.js";
-export type { NoticeContext, NoticePayload, NoticeCause } from "./notice.js";
+export type { NoticeContext, NoticePayload, NoticeCause, NoticeUser } from "./notice.js";
 export type { DeliveryResult, LogOptions } from "./client.js";
 export type { Breadcrumb, BreadcrumbInput } from "./breadcrumbs.js";
 export type { Span, SpanLocation, Transaction } from "./apm.js";
@@ -41,15 +42,21 @@ let breadcrumbs = new BreadcrumbBuffer(configuration.maxBreadcrumbs);
 export interface InitOptions extends ConfigurationInput {
   /** Install process.uncaughtException / unhandledRejection handlers. */
   captureGlobals?: boolean;
+  /**
+   * After reporting an uncaught exception or unhandled rejection, exit with
+   * code 1 as the runtime does without a listener, unless the app has its
+   * own listener for the event. Defaults to `true`.
+   */
+  exitOnUncaught?: boolean;
 }
 
 function init(options: InitOptions = {}): void {
-  const { captureGlobals = true, ...rest } = options;
+  const { captureGlobals = true, exitOnUncaught = true, ...rest } = options;
   configuration = new Configuration(rest);
   client.configure(configuration);
   breadcrumbs = new BreadcrumbBuffer(configuration.maxBreadcrumbs);
   if (captureGlobals) {
-    installProcessHandlers(client, breadcrumbs);
+    installProcessHandlers(client, breadcrumbs, { exitOnUncaught });
   } else {
     uninstallProcessHandlers();
   }

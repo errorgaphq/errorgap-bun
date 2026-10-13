@@ -55,6 +55,39 @@ Nested errors are captured automatically: pass a chain built with
 `new Error("…", { cause })` and each cause's type/message lands in
 `context.causes` while its frames merge into the backtrace.
 
+## Filtering, hooks and delivery
+
+```ts
+Errorgap.init({
+  filterKeys: ["password", "token", /^ssn$/],
+  ignoreEnvironments: ["test"],
+  beforeNotify(notice) {
+    if (notice.errors[0]?.type === "AbortError") return false; // drop it
+    notice.context.team = "billing";                            // or change it
+  },
+});
+
+Errorgap.notify(err, { user: { id: account.id, email: account.email } });
+```
+
+`filterKeys` (substrings or regexps) are masked at any depth in `params` and
+`session`. Values that cannot be serialized (cycles, bigints) and oversized
+strings or collections are cut rather than losing the notice.
+
+Payloads are queued (at most `queueSize`, oldest dropped first) and sent a few
+at a time, each with a `timeout`. A send that fails on the network or with a
+5xx is retried up to three times; after a 429 the SDK stops sending for the
+server's `Retry-After`.
+
+After reporting an uncaught exception or unhandled rejection the SDK exits the
+process with code 1, as the runtime does when nothing listens for those events.
+It leaves the exit to you when your app has its own listener, or with
+`exitOnUncaught: false`.
+
+With `release` unset, the release is `ERRORGAP_RELEASE`, the hosting platform's
+commit variable (`SOURCE_VERSION`, `HEROKU_SLUG_COMMIT`, `RENDER_GIT_COMMIT`,
+…) or the git checkout's HEAD.
+
 ## Breadcrumbs
 
 ```ts
