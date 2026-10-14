@@ -1,16 +1,14 @@
 import type { Configuration } from "./configuration.js";
+import { RemoteSettings, type RemoteKind } from "./remote-settings.js";
 import { buildNotice, type NoticeContext, type NoticePayload } from "./notice.js";
 import { transactionPayload, type Transaction } from "./apm.js";
 import { logLevelRank, normalizeLogLevel } from "./logs.js";
 import { VERSION } from "./version.js";
 import { currentTransactionId } from "./transaction-context.js";
 
-export interface DeliveryResult {
-  status?: number;
-  body?: string;
-  error?: unknown;
-  queued?: boolean;
-}
+import { Delivery, type DeliveryResult } from "./delivery.js";
+
+export type { DeliveryResult } from "./delivery.js";
 
 export interface LogOptions {
   source?: string;
@@ -19,8 +17,25 @@ export interface LogOptions {
   sync?: boolean;
 }
 
+/** Which of the project's switches covers each kind of payload. */
+const REMOTE_KINDS: Record<string, RemoteKind | undefined> = {
+  notices: "errors",
+  transactions: "apm",
+  logs: "logs",
+};
+
 export class Client {
-  private pending = new Set<Promise<unknown>>();
+  /** What errorgap wants this app to send (the project's remote settings). */
+  readonly remote = new RemoteSettings(() => this.configuration);
+  private delivery = new Delivery(() => ({
+    endpoint: this.configuration.endpoint,
+    projectSlug: this.configuration.projectSlug,
+    apiKey: this.configuration.apiKey,
+    timeout: this.configuration.timeout,
+    queueSize: this.configuration.queueSize,
+    userAgent: `errorgap-bun/${VERSION}`,
+    warn: (message) => this.configuration.logger?.warn(message),
+  }));
 
   constructor(private configuration: Configuration) {}
 
@@ -35,7 +50,10 @@ export class Client {
     try {
       this.configuration.validate();
       const err = coerceError(error);
-      const notice = buildNotice(err, this.configuration, withTransaction(options));
+      const notice = await this.runHook(
+        buildNotice(err, this.configuration, withTransaction(options)),
+      );
+      if (!notice) return { status: 202, body: "dropped by beforeNotify" };
       return this.submit("notices", notice, options.sync);
     } catch (exception) {
       this.log(exception);
@@ -99,48 +117,37 @@ export class Client {
     payload: unknown,
     sync?: boolean,
   ): Promise<DeliveryResult> {
-    if (sync || !this.configuration.async) {
-      const p = this.deliver(resource, payload);
-      this.track(p);
-      return await p;
-    }
-    this.track(this.deliver(resource, payload));
-    return { queued: true, status: 202 };
+    if (this.configuration.ignoredEnvironment()) return { status: 204 };
+    const kind = REMOTE_KINDS[resource];
+    if (kind && !this.remote.enabled(kind)) return { status: 204 };
+    if (sync || !this.configuration.async) return await this.delivery.send(resource, payload);
+    return this.delivery.enqueue(resource, payload);
   }
 
-  async deliver(resource: string, payload: unknown): Promise<DeliveryResult> {
-    const url = resourceUrl(this.configuration, resource);
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      "user-agent": `errorgap-bun/${VERSION}`,
-    };
-    if (this.configuration.apiKey) {
-      headers["x-errorgap-project-key"] = this.configuration.apiKey;
-    }
+  deliver(resource: string, payload: unknown): Promise<DeliveryResult> {
+    return this.delivery.send(resource, payload);
+  }
+
+  /** Await everything queued or being sent. Use during graceful shutdown. */
+  async flush(): Promise<void> {
+    await this.delivery.flush();
+  }
+
+  /**
+   * A hook that throws is logged and skipped: a bug in a filter must not
+   * lose the error it was filtering.
+   */
+  private async runHook(notice: NoticePayload): Promise<NoticePayload | null> {
+    const hook = this.configuration.beforeNotify;
+    if (!hook) return notice;
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      const body = await safeBody(response);
-      return { status: response.status, body };
+      const result = await hook(notice);
+      if (result === false || result === null) return null;
+      return result && typeof result === "object" && Array.isArray(result.errors) ? result : notice;
     } catch (exception) {
       this.log(exception);
-      return { error: exception };
+      return notice;
     }
-  }
-
-  async flush(): Promise<void> {
-    while (this.pending.size > 0) {
-      await Promise.all(Array.from(this.pending));
-    }
-  }
-
-  private track(promise: Promise<unknown>): void {
-    const wrapped = promise.catch(() => undefined);
-    this.pending.add(wrapped);
-    void wrapped.finally(() => this.pending.delete(wrapped));
   }
 
   private log(exception: unknown): void {
@@ -151,21 +158,6 @@ export class Client {
         ? `${exception.name}: ${exception.message}`
         : String(exception);
     logger.warn(`[errorgap] ${message}`);
-  }
-}
-
-function resourceUrl(configuration: Configuration, resource: string): string {
-  const base = configuration.endpoint.endsWith("/")
-    ? configuration.endpoint.slice(0, -1)
-    : configuration.endpoint;
-  return `${base}/api/projects/${configuration.projectSlug}/${resource}`;
-}
-
-async function safeBody(response: Response): Promise<string> {
-  try {
-    return await response.text();
-  } catch {
-    return "";
   }
 }
 
