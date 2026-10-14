@@ -26,6 +26,11 @@ export interface ConfigurationInput {
   /** Substrings (case-insensitive) or regexps; matching keys are masked at any depth. */
   filterKeys?: FilterKey[];
   beforeNotify?: BeforeNotify;
+  /**
+   * Follow the project's settings in errorgap (Project settings › What SDKs
+   * send): stop sending what is switched off there. Defaults to true.
+   */
+  remoteSettings?: boolean;
   /** Environments in which nothing is sent. */
   ignoreEnvironments?: string[];
   /** Seconds allowed for each request to errorgap. Default 5. */
@@ -51,6 +56,9 @@ const IGNORE_ENV_DEFAULT = (process.env.ERRORGAP_IGNORE_ENVIRONMENTS ?? "")
   .map((name) => name.trim())
   .filter((name) => name.length > 0);
 
+const REMOTE_SETTINGS_DEFAULT =
+  (process.env.ERRORGAP_REMOTE_SETTINGS ?? "").trim().toLowerCase() !== "false";
+
 const DEFAULT_FILTER_KEYS = [
   "password",
   "password_confirmation",
@@ -72,6 +80,7 @@ export class Configuration {
   logger: Logger | null;
   filterKeys: FilterKey[];
   beforeNotify: BeforeNotify | undefined;
+  remoteSettings: boolean;
   ignoreEnvironments: string[];
   timeout: number;
   queueSize: number;
@@ -95,6 +104,7 @@ export class Configuration {
     this.logger = input.logger === undefined ? console : input.logger;
     this.filterKeys = input.filterKeys ?? [...DEFAULT_FILTER_KEYS];
     this.beforeNotify = input.beforeNotify;
+    this.remoteSettings = input.remoteSettings ?? REMOTE_SETTINGS_DEFAULT;
     this.ignoreEnvironments = input.ignoreEnvironments ?? IGNORE_ENV_DEFAULT;
     this.timeout = input.timeout ?? 5;
     this.queueSize = input.queueSize ?? 100;
